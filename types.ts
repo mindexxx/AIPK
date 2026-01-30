@@ -89,6 +89,7 @@ export interface SimulationResult {
   timelineEvents: TimelineEvent[];
   // Added to support combined PDF export
   comparison?: ComparisonResult; 
+  usedRules?: SimulationRule[]; // Added: stores the actual rules used for this simulation run
 }
 
 export interface HistoryItem {
@@ -222,6 +223,15 @@ export const LABELS = {
     delete: "Delete",
     noHistory: "No history found. Start a new comparison!",
     exportPdf: "Export PDF",
+    // Report Labels
+    liveLog: "Live Event Log",
+    winner: "Winner",
+    sourceThread: "Source Thread",
+    noData: "No data available.",
+    simEnv: "Simulation Environment",
+    initializing: "Initializing simulation...",
+    complete: "Complete",
+    running: "Running...",
     // Customization
     customization: "Customization",
     login: "Login",
@@ -328,6 +338,15 @@ export const LABELS = {
     delete: "删除",
     noHistory: "暂无历史记录，请开始新的对比！",
     exportPdf: "导出 PDF",
+    // Report Labels
+    liveLog: "实时事件日志",
+    winner: "胜出",
+    sourceThread: "来源讨论",
+    noData: "暂无可用数据。",
+    simEnv: "模拟环境配置",
+    initializing: "正在初始化模拟...",
+    complete: "已完成",
+    running: "运行中...",
     // Customization
     customization: "定制中心",
     login: "登录",

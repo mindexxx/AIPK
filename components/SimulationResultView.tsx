@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { SimulationResult, Language, LABELS, SimulationMetricPoint } from '../types';
 import { MessageSquare, Trophy, Minus, FileText, ExternalLink, ThumbsUp, ThumbsDown, MinusCircle, Activity, Clock, PlayCircle, Download, Sliders } from 'lucide-react';
@@ -19,31 +20,56 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
 
   const events = data.timelineEvents || [];
   
-  // Transform complex timeline events into flat data for Recharts
+  // Scan ALL events for metric keys to ensure we capture everything
   const metricKeys = useMemo(() => {
-    if (events.length === 0) return [];
-    return Object.keys(events[0].metrics || {});
+    const keys = new Set<string>();
+    events.forEach(e => {
+        if (e.metrics) {
+            Object.keys(e.metrics).forEach(k => keys.add(k));
+        }
+    });
+    return Array.from(keys);
   }, [events]);
 
+  // Robust parsing: return null for missing/invalid data so connectNulls can work
   const fullChartData = useMemo(() => {
     return events.map(e => {
         const point: any = { time: e.time };
         Object.keys(e.metrics || {}).forEach(key => {
-            point[`${key}_A`] = e.metrics[key].A;
-            point[`${key}_B`] = e.metrics[key].B;
+            if (e.metrics && e.metrics[key]) {
+                const valA = e.metrics[key].A;
+                const valB = e.metrics[key].B;
+                
+                const parseVal = (v: any) => {
+                    if (typeof v === 'number') return v;
+                    if (!v) return null;
+                    const clean = String(v).replace(/[^0-9.-]/g, '');
+                    if (!clean) return null;
+                    const parsed = parseFloat(clean);
+                    return isNaN(parsed) ? null : parsed;
+                };
+
+                const pA = parseVal(valA);
+                if (pA !== null) point[`${key}_A`] = pA;
+                
+                const pB = parseVal(valB);
+                if (pB !== null) point[`${key}_B`] = pB;
+            }
         });
         return point;
     });
   }, [events]);
 
-  // Animate the running status
+  // Animate the running status (Faster now: 300ms)
   useEffect(() => {
     if (!isPlaying) {
         setVisiblePoints(fullChartData.length);
         return;
     }
     
-    setVisiblePoints(0);
+    // Start with 1 point so user sees something immediately
+    setVisiblePoints(1);
+    
     const interval = setInterval(() => {
         setVisiblePoints(prev => {
             if (prev >= fullChartData.length) {
@@ -53,12 +79,13 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
             }
             return prev + 1;
         });
-    }, 800); // Add a point every 800ms to simulate "Running"
+    }, 300); 
 
     return () => clearInterval(interval);
   }, [fullChartData.length, isPlaying]);
 
   const currentChartData = useMemo(() => {
+      if (fullChartData.length === 0) return [];
       return fullChartData.slice(0, Math.max(1, visiblePoints));
   }, [fullChartData, visiblePoints]);
 
@@ -78,11 +105,15 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
   const questionAnswers = data.questionAnswers || [];
   const comments = data.userComments || [];
 
-  // Colors for different metrics
+  const activeRules = data.usedRules && data.usedRules.length > 0 
+    ? data.usedRules 
+    : (data.comparison?.recommendedRules || []);
+
   const colors = [
     { A: '#2563eb', B: '#9333ea' }, // Blue / Purple
     { A: '#059669', B: '#db2777' }, // Green / Pink
     { A: '#d97706', B: '#0891b2' }, // Amber / Cyan
+    { A: '#dc2626', B: '#4f46e5' }, // Red / Indigo
   ];
 
   return (
@@ -110,13 +141,13 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                 ) : (
                     <span className="text-xs font-medium text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span>
-                        Running...
+                        {t.running}
                     </span>
                 )}
                 {!isPlaying && (
                     <span className="text-xs font-medium text-green-700 bg-green-50 px-3 py-1 rounded-full border border-green-200 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                        Complete
+                        {t.complete}
                     </span>
                 )}
              </div>
@@ -125,15 +156,15 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
 
       <div id="simulation-report-container" className="space-y-8 bg-white p-4">
         
-        {/* Environment Parameters Confirmation (New) */}
-        {data.comparison && data.comparison.recommendedRules && (
+        {/* Environment Parameters */}
+        {activeRules.length > 0 && (
             <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2 text-xs font-bold text-blue-800 uppercase tracking-wider">
                     <Sliders className="w-3 h-3" />
-                    Simulation Environment
+                    {t.simEnv}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    {data.comparison.recommendedRules.map(rule => (
+                    {activeRules.map(rule => (
                         <div key={rule.id} className="bg-white border border-blue-200 px-3 py-1 rounded-full text-sm text-blue-900 shadow-sm">
                             <span className="font-semibold">{rule.name}:</span> {rule.value} {rule.unit}
                         </div>
@@ -152,8 +183,8 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
             </p>
         </div>
 
-        {/* Complex Timeline Visualization */}
-        {fullChartData.length > 0 && (
+        {/* Timeline Visualization */}
+        {fullChartData.length > 0 ? (
             <div className="grid lg:grid-cols-3 gap-6">
                 
                 {/* Chart Column */}
@@ -167,7 +198,6 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                         )}
                     </h3>
                     <div className="h-80 w-full flex-1 relative">
-                        {/* Add a static grid background if needed, but Recharts handles it */}
                         <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={currentChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
@@ -186,7 +216,9 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                                         name={`${modelA} (${key})`} 
                                         stroke={colors[i % colors.length].A} 
                                         strokeWidth={2} 
-                                        dot={{r: 3}}
+                                        dot={{r: 4}}
+                                        activeDot={{r: 6}}
+                                        connectNulls={true}
                                         isAnimationActive={false} 
                                     />
                                     <Line 
@@ -195,8 +227,10 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                                         name={`${modelB} (${key})`} 
                                         stroke={colors[i % colors.length].B} 
                                         strokeWidth={2} 
-                                        dot={{r: 3}}
+                                        dot={{r: 4}}
+                                        activeDot={{r: 6}}
                                         strokeDasharray="5 5"
+                                        connectNulls={true}
                                         isAnimationActive={false}
                                     />
                                 </React.Fragment>
@@ -209,10 +243,10 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                 {/* Event Log Column */}
                 <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm overflow-hidden flex flex-col">
                     <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4 flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-gray-400" /> Live Event Log
+                        <Clock className="w-4 h-4 text-gray-400" /> {t.liveLog}
                     </h3>
                     <div className="flex-1 overflow-y-auto space-y-4 pr-2 max-h-80 lg:max-h-full custom-scrollbar">
-                        {events.slice(0, visiblePoints).map((e, idx) => (
+                        {events.slice(0, Math.max(1, visiblePoints)).map((e, idx) => (
                             <div key={idx} className="relative pl-4 border-l-2 border-gray-100 pb-1 animate-fade-in">
                                 <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-sm"></div>
                                 <div className="text-xs font-bold text-gray-400 mb-0.5">{e.time}</div>
@@ -220,6 +254,7 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                                 <div className="mt-1 text-[10px] text-gray-500 grid grid-cols-2 gap-1">
                                     {Object.entries(e.metrics || {}).map(([key, rawVal]) => {
                                         const val = rawVal as SimulationMetricPoint;
+                                        if (!val) return null;
                                         return (
                                             <div key={key} className="bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
                                                 <span className="font-semibold text-gray-700">{val.A}</span> vs <span className="font-semibold text-gray-700">{val.B}</span> <span className="text-gray-400">{val.unit}</span>
@@ -229,11 +264,12 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                                 </div>
                             </div>
                         ))}
-                        {visiblePoints === 0 && (
-                            <div className="text-sm text-gray-400 italic text-center pt-10">Initializing simulation...</div>
-                        )}
                     </div>
                 </div>
+            </div>
+        ) : (
+            <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-400 italic">
+                {t.noData}
             </div>
         )}
 
@@ -260,7 +296,7 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
                 </div>
 
                 <div className="pt-3 border-t border-gray-50 flex justify-between items-center text-sm">
-                    <span className="text-gray-400 text-xs">Winner</span>
+                    <span className="text-gray-400 text-xs">{t.winner}</span>
                     {getWinnerBadge(kpi.winner)}
                 </div>
                 </div>
@@ -268,48 +304,39 @@ export const SimulationResultView: React.FC<SimulationResultViewProps> = ({ data
             </div>
         </div>
 
-        {/* Direct Q&A Section */}
-        {questionAnswers.length > 0 && (
-            <div className="grid gap-4">
-            {questionAnswers.map((qa, idx) => (
-                <div key={idx} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-                    <h4 className="text-sm font-bold text-gray-900 mb-2">{qa.question}</h4>
-                    <p className="text-gray-600 text-sm leading-relaxed">{qa.answer}</p>
-                </div>
-            ))}
-            </div>
-        )}
-
-        {/* User Comments / Threads */}
+        {/* User Comments */}
         <div className="space-y-4">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1">{t.comments}</h3>
-            {comments.length === 0 && <div className="text-sm text-gray-400 italic">No community data available.</div>}
-            {comments.map((comment, idx) => (
-                <div key={idx} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">
-                                {comment.user.charAt(0).toUpperCase()}
+            {comments.length === 0 && <div className="text-sm text-gray-400 italic">{t.noData}</div>}
+            {comments.map((comment, idx) => {
+                const userName = comment.user || 'Anonymous';
+                const char = userName.charAt(0).toUpperCase();
+                
+                return (
+                    <div key={idx} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-500">
+                                    {char}
+                                </div>
+                                <span className="text-sm font-semibold text-gray-900">{userName}</span>
+                                <span className="text-xs text-gray-400">• {comment.source}</span>
                             </div>
-                            <span className="text-sm font-semibold text-gray-900">{comment.user}</span>
-                            <span className="text-xs text-gray-400">• {comment.source}</span>
+                            <div className="flex items-center gap-1">
+                                {comment.sentiment === 'Positive' && <ThumbsUp className="w-3 h-3 text-green-500" />}
+                                {comment.sentiment === 'Negative' && <ThumbsDown className="w-3 h-3 text-red-500" />}
+                                {comment.sentiment === 'Neutral' && <MinusCircle className="w-3 h-3 text-gray-400" />}
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                            {comment.sentiment === 'Positive' && <ThumbsUp className="w-3 h-3 text-green-500" />}
-                            {comment.sentiment === 'Negative' && <ThumbsDown className="w-3 h-3 text-red-500" />}
-                            {comment.sentiment === 'Neutral' && <MinusCircle className="w-3 h-3 text-gray-400" />}
-                        </div>
+                        <p className="text-gray-600 text-sm mb-3 italic">"{comment.comment}"</p>
+                        {comment.url && (comment.url.startsWith('http') || comment.url.startsWith('www')) && (
+                            <a href={comment.url.startsWith('www') ? `https://${comment.url}` : comment.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                {t.sourceThread} <ExternalLink className="w-3 h-3" />
+                            </a>
+                        )}
                     </div>
-                    <p className="text-gray-600 text-sm mb-3 italic">"{comment.comment}"</p>
-                    
-                    {/* Robust Link Rendering: Only show if valid URL */}
-                    {comment.url && (comment.url.startsWith('http') || comment.url.startsWith('www')) && (
-                        <a href={comment.url.startsWith('www') ? `https://${comment.url}` : comment.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            Source Thread <ExternalLink className="w-3 h-3" />
-                        </a>
-                    )}
-                </div>
-            ))}
+                );
+            })}
         </div>
       </div>
     </div>
