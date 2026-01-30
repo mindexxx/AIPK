@@ -1,0 +1,5 @@
+{
+  "name": "InduComp AI",
+  "description": "An advanced industrial product comparison tool leveraging Generative AI to analyze specifications and simulate running conditions for power generators, HVAC systems, and CCHP units.",
+  "requestFramePermissions": []
+}
